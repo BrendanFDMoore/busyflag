@@ -1,0 +1,13 @@
+{
+  "name": "busyflag",
+  "version": "1.0.0",
+  "description": "flag slack status programmatically",
+  "main": "index.js",
+  "repository": "https://github.com/BrendanFDMoore/busyflag",
+  "author": "Brendan Moore <brendan.moore@rangle.io>",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^4.0.0",
+    "request": "^2.81.0"
+  }
+}
