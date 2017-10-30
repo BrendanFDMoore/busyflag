@@ -48,9 +48,9 @@ five.Board().on("ready", function() {
     isPullup: true
   });
 
-  const redLed = new five.Led(13);
-  const yellowLed = new five.Led(12);
-  const greenLed = new five.Led(11);
+  const redLed = new five.Led(5);
+  const yellowLed = new five.Led(4);
+  const greenLed = new five.Led(3);
 
   const allOff = () => {
     redLed.off();
