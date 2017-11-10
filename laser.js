@@ -1,11 +1,28 @@
 const five = require("johnny-five");
+const io = require('socket.io-client');
 
-console.log('Shooty Laser v0.1');
+console.log('Shooty Lasers v1.0');
+const socketconfig = require('./socket/config');
+const socket = io(socketconfig.ADDRESS);
+
+const sendEventOverSocket = (event) => {
+  socket.emit('shooty event', event);   
+};
 
 let lastHit = new Date();
 let SOLENOID_ACTIVE = false;
 let score = 0;
 let targetTimeout;
+
+const LOOP_DELAY = 4300;
+const RANDOM_TARGET_DELAY_BASE = 1900;
+const TARGET_MISS_TIMEOUT = 1600;
+let targetActive = false;
+let currentTargetColour = null;
+let redTargetChances = 0;
+let greenTargetChances = 0;
+let loopInterval = null;
+let missTimeout = null;
 
 five.Board().on("ready", function() {
   const relay = new five.Relay({pin: 15, type: "NC"});
@@ -19,74 +36,97 @@ five.Board().on("ready", function() {
     type: "digital",
     mode: 0,
   });
+  const startButton = new five.Button({
+    pin: 6,
+    isPullup: true
+  });
+  const stopButton = new five.Button({
+    pin: 7,
+    isPullup: true
+  });
 
-  const toggleSolenoidControl = () => {
-    SOLENOID_ACTIVE = !SOLENOID_ACTIVE;
+  startButton.on("down", function(value) {
+    startGame();
+  });
+
+  stopButton.on("down", function(value) {
+    stopGame();
+  });
+
+  const startGame = () => {
+    console.log('startGame');
+    sendEventOverSocket('startGame');
+    redTargetChances = 0;
+    greenTargetChances = 0;
+    loopInterval = setInterval(gameLoop, LOOP_DELAY);
   };
 
-  const setSolenoidControl = () => {
-    console.log('setSolenoidControl', SOLENOID_ACTIVE);
+  const stopGame = () => {
+    console.log('stopGame');
     
-    !!SOLENOID_ACTIVE ? solenoidControl.write(1) : solenoidControl.write(0);
-    !!SOLENOID_ACTIVE ? this.pinMode(16, five.Pin.OUTPUT) : this.pinMode(16, five.Pin.INPUT);
-    !!SOLENOID_ACTIVE ? relay.close() : relay.open();
+    sendEventOverSocket('stopGame');    
+    clearInterval(loopInterval);
   };
 
-  const addToScore = add => {
-    score = score + add;
+  const raiseTarget = () => {
+    targetActive = true;
+
+    relay.close();
   };
 
-  const showScore = () => {
-    console.log('Current Score:', score);
+  const lowerTarget = () => {
+    targetActive = false;
+    currentTargetColour = null;    
+
+    relay.open();
   };
 
-  const targetHit = () => {
-    console.log('Target hit!');
-    if (SOLENOID_ACTIVE) {
-      clearTimeout(targetTimeout);
-      toggleSolenoidControl();
-      setSolenoidControl();
-      console.log('Nice shot!');
-      addToScore(10);
-      showScore();
+  const activateTarget = (isRed) => {
+    currentTargetColour = isRed ? 'red' : 'green';
+    if (isRed) {
+      redTargetChances ++;
+    } else {
+      greenTargetChances ++;
     }
+    sendEventOverSocket(`${currentTargetColour}Target`);
+    raiseTarget();
+    missTimeout = setTimeout(targetMissDetected, TARGET_MISS_TIMEOUT);
   };
 
-  const clearTarget = () => {
-    if (SOLENOID_ACTIVE) {
-      toggleSolenoidControl();
-      setSolenoidControl();
-      console.log('Too slow!');
-      addToScore(-5);
-      showScore();
-    }
+  const targetHitDetected = () => {
+    if (!targetActive) return;
+    clearTimeout(missTimeout);
+    sendEventOverSocket(`${currentTargetColour}Hit`)
+    lowerTarget();
   };
 
-  const randomizeTarget = () => {
-    
-    if (!SOLENOID_ACTIVE) {
-      let r = Math.random();
-      console.log('randomizeTarget...', r);
-    
-      if (r > 0.85) {
-        toggleSolenoidControl();
-        setSolenoidControl();
-        console.log('Target active for 5 seconds!');
-        targetTimeout = setTimeout(clearTarget, 5200);
-      }
-    }
+  const targetMissDetected = () => {
+    if (!targetActive) return;
+    clearTimeout(missTimeout);
+    sendEventOverSocket(`${currentTargetColour}Miss`)
+    lowerTarget();
   };
 
   targetSensor.on("high", function() {
     console.log('targetSensor high!');    
-    targetHit();
+    targetHitDetected();
   });
+  
   targetSensor.on("low", function() {
     console.log('targetSensor low!');        
-    targetHit();
   });
 
-  setSolenoidControl();
-
-  setInterval(randomizeTarget, 400);
+  const gameLoop = () => {
+    console.log('Game Loop');
+    console.log('Red Chances:', redTargetChances);
+    console.log('Green Chances:', greenTargetChances);
+    const randomDelay = Math.round(Math.random()*RANDOM_TARGET_DELAY_BASE);
+    const redProbability = (redTargetChances+greenTargetChances) === 0 ? 0.50
+      : greenTargetChances / (redTargetChances+greenTargetChances);
+    console.log('redProbability:', redProbability);
+    
+    const nextTargetRed = Math.random() <= redProbability;
+    console.log('nextTargetRed:', nextTargetRed);
+    setTimeout(() => activateTarget(nextTargetRed), randomDelay);
+  };
 });
